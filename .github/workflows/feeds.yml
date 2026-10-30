@@ -1,0 +1,49 @@
+name: Opdatér Hybel-feeds
+
+on:
+  schedule:
+    - cron: '17 4 * * *' # hver nat kl. 04:17 UTC (05:17/06:17 dansk tid)
+  workflow_dispatch: # manuel kørsel fra fanen "Actions"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      # Fejler scraperen (fx fordi sitet har ændret markup), stopper jobbet her,
+      # og de sidst publicerede feeds bliver liggende uændret.
+      - run: npm run scrape
+      - run: |
+          cat > public/index.html <<'HTML'
+          <!doctype html><meta charset="utf-8"><title>Hybel-feeds</title>
+          <ul><li><a href="galleri.json">galleri.json</a></li><li><a href="udstillingshuse.json">udstillingshuse.json</a></li></ul>
+          HTML
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
